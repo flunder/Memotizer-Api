@@ -121,16 +121,13 @@ module.exports = function (app) {
 
     app.post('/memos/:id/notes', requireAuth, (req, res) => {
 
-        let user = req.user;
-        let memoId = req.params.id;
+        var user = req.user;
+        var memoId = req.params.id;
         var token = getToken(req.headers);
 
         const myMemo = Memo.findById(memoId, (err, m) => {
 
-            const newNote = new Note({
-                ...req.body,
-                memo: memoId
-            });
+            const newNote = new Note(Object.assign({}, req.body, { memo: memoId }));
 
             newNote.save((err) => {
                 if (err) return res.json({
