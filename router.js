@@ -40,7 +40,8 @@ module.exports = function (app) {
         var memo = new Memo({
             title: req.body.title,
             url: req.body.url,
-            user: req.user._id
+            user: req.user._id,
+            orderOfNotes: []
         });
 
         if (req.body.category) {
@@ -135,6 +136,7 @@ module.exports = function (app) {
                 });
 
                 m.notes.push(newNote);
+                m.orderOfNotes.push(newNote._id)
                 m.save();
 
                 res.json(newNote);
@@ -161,6 +163,30 @@ module.exports = function (app) {
 
     app.delete('/note/:id', requireAuth, (req, res) => {
 
+        Note.findById(req.params.id, (err, note) => {
+
+            var idToRemove = note._id;
+
+            // Take care to remove the note_id from orderOfNotes on the memo
+            // and change the associated notes
+
+            Memo.findById(note.memo, (err, memo) => {
+
+                var orderOfNotes = memo.orderOfNotes;
+                var index = orderOfNotes.indexOf(idToRemove);
+                if (index > -1) orderOfNotes.splice(index, 1);
+
+                var notes = memo.notes;
+                var index = notes.indexOf(idToRemove);
+                if (index > -1) notes.splice(index, 1);
+
+                // Apply and save
+                memo.orderOfNotes = orderOfNotes;
+                memo.notes = notes;
+                memo.save();
+            })
+        })
+
         Note.findByIdAndRemove({ _id: req.params.id }, (err, note) => {
             if (err) return res.json({
                 success: false, msg: `Deleting note failed. ${err}`
@@ -177,6 +203,23 @@ module.exports = function (app) {
         Note.find({ memo: req.params.id }, (err, notes) => {
             res.json(notes)
         })
+
+    })
+
+    app.post('/memos/:id/updateNoteOrder', requireAuth, (req, res) => {
+
+        var user = req.user;
+        var memoID = req.params.id;
+        var token = getToken(req.headers);
+
+        Memo.findById(memoID, (err, m) => {
+
+            m.orderOfNotes = req.body;
+            m.save();
+
+            res.json(m)
+
+        });
 
     })
 

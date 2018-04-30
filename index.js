@@ -7,7 +7,7 @@ const app = express();
 const router = require('./router');
 const cors = require('cors');
 
-mongoose.connect('mongodb://localhost:auth/auth')
+mongoose.connect('mongodb://localhost:auth/authdd')
 
 require("./models/user");
 require("./models/category");

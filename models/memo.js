@@ -21,6 +21,9 @@ var MemoSchema = new Schema({
     category: {
         type: Schema.Types.ObjectId,
         ref: 'category'
+    },
+    orderOfNotes: {
+        type: Array
     }
 }, {
     usePushEach: true
