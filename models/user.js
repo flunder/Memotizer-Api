@@ -5,30 +5,42 @@ const bcrypt = require('bcrypt-nodejs')
 const userSchema = new Schema({
     email: { type: String, unique: true, lowercase: true },
     password: String,
-    // No touchy user, resaving breaks the password
+    passwordResetKey: String,
+    passwordResetDate: Date
 }, {
     usePushEach: true
 });
 
 // On Save Hook, encrypt password
 
-userSchema.pre('save', function (next) {
-    const user = this;
-    bcrypt.genSalt(10, function (err, salt) {
-        if (err) {
-            return next(err);
-        }
+userSchema.pre('save', function (next, req) {
 
-        bcrypt.hash(user.password, salt, null, function (err, hash) {
-            if (err) {
-                return next(err);
-            }
+    console.log(req);
 
-            user.password = hash;
-            next();
+    // [1] New User
+    // [2] Update User
+
+    if (this.isNew || req.resetPassword) { // Created Hashed Passwrod
+        const user = this;
+
+        bcrypt.genSalt(10, function (err, salt) {
+            if (err) return next(err);
+
+            bcrypt.hash(user.password, salt, null, function (err, hash) {
+                if (err) return next(err);
+                user.password = hash;
+                next();
+            });
         });
 
-    });
+    } else {
+        if (req) {
+            if (req.route.path === '/requestResetPassword') {
+                next();
+            }
+        }
+    }
+
 });
 
 userSchema.methods.comparePassword = function (candidatePassword, callback) {

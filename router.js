@@ -1,6 +1,9 @@
 const Authentication = require('./controllers/authentication');
 const passportService = require('./services/passport');
 const passport = require('passport');
+const nodemailer = require('nodemailer');
+const got = require('got');
+const rand = require("random-key");
 
 const requireAuth = passport.authenticate('jwt', {session: false});
 const requireSignIn = passport.authenticate('local', {session: false});
@@ -12,8 +15,104 @@ var Note = require("./models/note");
 
 module.exports = function (app) {
 
+    app.get('/ga', (req, res) => {
+        trackEvent('Example category', 'Reset Password', 'Example label', { 'metric1': 1 })
+            .then(() => {
+                res.status(200).send('Event tracked.').end();
+            })
+            // This sample treats an event tracking error as a fatal error. Depending
+            // on your application's needs, failing to track an event may not be
+            // considered an error.
+            .catch(err => {
+                console.log(`Error sending tracking data ${err}`);
+            });
+    })
+
+    // Don't forget to send a 200 in any case
+    // Needs process.env.MEMOTIZER_HOST = host
+    // and process.env.LA_APP_MSG_PASS = email password
+
+    app.post('/requestResetPassword', (req, res) => {
+
+        const email = req.body.email;
+        const passwordResetKey = rand.generate();
+
+        User.findOne({email: email}, function (err, existingUser) {
+            if (err) {
+                return next(err);
+            }
+
+            if (!existingUser) {
+                console.log('user doesnt exist');
+            } else {
+                existingUser.passwordResetKey = passwordResetKey;
+                existingUser.passwordResetDate = new Date();
+                existingUser.save(req, function() {});
+            }
+        })
+
+        nodemailer.createTestAccount((err, account) => {
+
+            const resetPasswordUrl = process.env.MEMOTIZER_HOST + '/resetPassword/' + email + '/' + passwordResetKey;
+
+            const htmlEmail = `
+                <h3>Contact Details</h3>
+                <ul>
+                    <li>Name: Lars</li>
+                    <li>Message: Hi!</li>
+                    <li>Param: ${req.body.message}</li>
+                </ul>
+                <a href="${resetPasswordUrl}">Click here to reset your password</a>
+            `
+
+            let transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: {
+                    user: 'la.app.messenger@gmail.com',
+                    pass: process.env.LA_APP_MSG_PASS
+                }
+            });
+
+            let mailOptions = {
+                from: 'la.app.messenger@gmail.com',
+                from: '"Memotizer" <la.app.messenger@gmail.com>',
+                to: email,
+                replyTo: 'la.app.messenger@gmail.com',
+                subject: 'Memotizer Password Reset',
+                text: 'Hello world?',
+                html: htmlEmail
+            };
+
+            transporter.sendMail(mailOptions, (error, info) => {
+                if (error) {
+                    return console.log(error);
+                }
+                // console.log('Message sent: %s', info.messageId);
+                // console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
+            });
+
+            // GA TRACKING OF RESET EVENTS
+            // Currently not working
+
+            trackEvent('Example category', 'Reset Password', 'Example label', { 'metric1': 1 })
+                .then(() => {
+                    res.status(200).send('Event tracked.').end();
+                })
+                // // This sample treats an event tracking error as a fatal error. Depending
+                // // on your application's needs, failing to track an event may not be
+                // // considered an error.
+                // .catch(err => {
+                //     console.log(`Error sending tracking data ${err}`);
+                // });
+
+            res.sendStatus(200);
+        })
+
+    })
+
     app.post('/signup', Authentication.signup);
     app.post('/signin', requireSignIn, Authentication.signin);
+    app.post('/resetPassword', Authentication.resetPassword);
 
     // Get Memos [GET]
 
@@ -22,11 +121,11 @@ module.exports = function (app) {
         var user = req.user;
         console.log(token);
         Memo.find({ user: user._id, category: req.query.category })
-            .populate('notes')
-            .exec((err, memos) => {
-                if (err) console.log(err);
-                res.json(memos);
-            });
+        .populate('notes')
+        .exec((err, memos) => {
+            if (err) console.log(err);
+            res.json(memos);
+        });
     })
 
     // Add Memo [POST]
@@ -223,85 +322,6 @@ module.exports = function (app) {
 
     })
 
-    /* TESTING ROUTES */
-
-    app.get('/', requireAuth, (req, res) => {
-        res.send({message: 'S3CR3T M3SS4G3'});
-    });
-
-
-    app.get('/xxx', (req, res) => {
-        // res.send('yo');
-        res.status(200).json({
-            message: "You're authorized to see this secret message."
-        });
-    })
-
-    app.get('/myBooks', requireAuth, (req, res) => {
-        var user = req.user;
-        Book.find({ user: user._id}, (err, users) => {
-            res.json(users);
-        });
-
-    })
-
-    app.get('/users', (req, res) => {
-        User.find((err, users) => {
-            if (err) return next(err);
-            res.json(users);
-        });
-
-    })
-
-    app.get('/books', requireAuth, (req, res) => {
-        var token = getToken(req.headers);
-
-        if (token) {
-            Book.find((err, books) => {
-                if (err) return next(err);
-                res.json(books);
-            });
-        } else {
-            return res.status(403).send({success: false, msg: 'Unauthorized.'});
-        }
-    });
-
-    app.post('/book', requireAuth, (req, res) => {
-        var token = getToken(req.headers);
-        console.log("**", token);
-        var user = req.user;
-
-        console.log("**", req.body);
-
-        if (token) {
-
-            const aUser = User.findById(user._id);
-
-            myUser.update((err) => {
-                if (err) return handleError(err);
-
-                var newBook = new Book({
-                    isbn: req.body.isbn,
-                    title: req.body.title,
-                    author: req.body.author,
-                    publisher: req.body.publisher,
-                    user: user._id
-                });
-
-                newBook.save((err) => {
-                    if (err) {
-                        return res.json({success: false, msg: `Save book failed. ${err}`});
-                    }
-                    res.json({success: true, msg: 'Successful created new book.'});
-                });
-
-            })
-
-
-        } else {
-            return res.status(403).send({success: false, msg: 'Unauthorized.'});
-        }
-    });
 }
 
 getToken = (headers) => {
@@ -319,3 +339,29 @@ getToken = (headers) => {
     //     return null;
     // }
 };
+
+trackEvent = (category, action, label, value, cb) => {
+    const data = {
+        // API Version.
+        v: '1',
+        // Tracking ID / Property ID.
+        tid: 'UA-119521617-1',
+        // Anonymous Client Identifier. Ideally, this should be a UUID that
+        // is associated with particular user, device, or browser instance.
+        cid: '555',
+        // Event hit type.
+        t: 'event',
+        // Event category.
+        ec: category,
+        // Event action.
+        ea: action,
+        // Event label.
+        el: label,
+        // Event value.
+        ev: value
+    };
+
+    return got.post('http://www.google-analytics.com/collect', {
+        form: data
+    });
+}
